@@ -2,6 +2,6 @@ This repository contains code associated with the paper “Sexually dimorphic ne
 
 Contributors to the code:
 
-David Deutsch (University of Haifa, Israel)
-Arie Matsliah (Princeton University, NJ, USA)
-Sven Dorkenwald (MIT, MA, USA)
+David Deutsch (University of Haifa, Israel)  
+Arie Matsliah (Princeton University, NJ, USA)  
+Sven Dorkenwald (MIT, MA, USA)  
