@@ -1,3 +1,65 @@
 *.asv
 *.mlx.autosave
 .DS_Store
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python tooling caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Coverage / test artifacts
+.coverage
+.coverage.*
+htmlcov/
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+
+# VS Code
+.vscode/
+
+# PyCharm / IntelliJ
+.idea/
+*.iml
+out/
+
+# Generated outputs
+outputs/
+figures/
+*.png
+*.svg
+*.pdf
+
+# Local data
+data/raw/
+data/intermediate/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
