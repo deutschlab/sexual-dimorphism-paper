@@ -1,23 +1,39 @@
 % creating a layout for the fru/dsx network, using the 27 clusters made by Arie as nodes
 
 
+%% setup: paths are relative to the repository, so this runs on any machine.
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'setup: paths are relative to the repository, so this runs on any machine.');
+% See src/matlab/README.md for how to obtain the external/large files below.
+repoRoot = fileparts(fileparts(fileparts(mfilename('fullpath'))));
+addpath(fullfile(repoRoot,'src','matlab','helpers'))
 
 %% create the connectivity table
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'create the connectivity table');
 version = 783;%Two neuropil where aadded to the neuropil list:
 subversion = 'V15';
 
-dataFolder = '/Users/ddeutsch/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/data';
-filename_dsxfru = fullfile(dataFolder,['Dsxfru_',num2str(version),'_',subversion,'.xlsx']);
-filename_clusters = fullfile(dataFolder,['DsxFru_V15_Clusters','.xlsx']);
-filename_connectivity = fullfile(dataFolder,'connections_princeton783.csv');
+dataFolder = fullfile(repoRoot,'data');
+rawDataFolder = fullfile(dataFolder,'raw');%large/external files, not tracked in git - see src/matlab/README.md
+figuresFolder = fullfile(repoRoot,'figures');
+if ~exist(fullfile(figuresFolder,'Fig5 - Network'),'dir'), mkdir(fullfile(figuresFolder,'Fig5 - Network')); end
+
+filename_dsxfru = fullfile(repoRoot,'Supplemental_table1_neuron_annotations.csv');
+filename_clusters = fullfile(repoRoot,'Supplemental_table2_cellType_clustering.csv');
+filename_connectivity = fullfile(rawDataFolder,'connections_princeton783.csv');
 
 % read dsxfru table
 opts = detectImportOptions(filename_dsxfru);
 opts = setvartype(opts, 'cellID','string');
-T_dsxfru = readtable(filename_dsxfru, opts, 'sheet','V15');
+T_dsxfru = readtable(filename_dsxfru, opts);
 
 % read cluster table
 T_clusters = readtable(filename_clusters);
+% normalize the cluster-number column name regardless of how readtable
+% sanitized the header (source file uses "Cluster number")
+clusterNumVar = T_clusters.Properties.VariableNames(contains(lower(T_clusters.Properties.VariableNames),'cluster'));
+if ~isempty(clusterNumVar) && ~strcmp(clusterNumVar{1},'ClusterNumber')
+    T_clusters.Properties.VariableNames{clusterNumVar{1}} = 'ClusterNumber';
+end
 ClusterNumber = T_clusters.ClusterNumber(1);
 for nLine = 2:height(T_clusters)
     if isnan(T_clusters.ClusterNumber(nLine))
@@ -45,6 +61,7 @@ for ii = 1:height(T_dsxfru)
 end
 
 %% Create and save connectivity table (between clusters). Skip if updated E is already calculated.
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'Create and save connectivity table (between clusters). Skip if updated E is already calculated.');
 % Create a new table. For each pair of clusters, get the number os
 % synapses. For each cluster get the number of in and out synapses. Get
 % weighted connections (SynapsesA_B)*Fraction_FromA*Fraction_ToB
@@ -94,37 +111,24 @@ for ii = 1:CLUSTERS
 end
 
 %save variables
-filename = '/Users/ddeutsch/Library/CloudStorage/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/Nature communication/figures/Fig5 - Network/Network_connectivity.mat';
+filename = fullfile(figuresFolder, 'Fig5 - Network', 'Network_connectivity.mat');
 save(filename,'E','vInputSynapses','vOutSynapses')
 
-%% python environment
-
-% I first created a conda env, cloned
-% https://github.com/arie-matsliah/sfas and installed it in the environment
-
-pyenv%if Python has been selected but has not yet been started in this MATLAB session
-% should get: Status: NotLoaded
-py.importlib.import_module('sfas')
-
-edges_py = py.list({ ...
-    py.list({'a','b',3}), ...
-    py.list({'b','c',2}), ...
-    py.list({'c','a',1})});
-
-order_py = py.sfas.greedy.compute_order(edges_py);
-order = string(order_py);
-disp(order)
-
-pyenv %After the first Python call, pyenv Status should change from NotLoaded to Loaded
-
-%% Setup Python environment
+%% python environment: the "sfas" package (https://github.com/arie-matsliah/sfas)
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'python environment: the "sfas" package (https://github.com/arie-matsliah/sfas)');
+% Setup steps are documented in src/matlab/README.md: create a conda env,
+% clone+install sfas into it, then set sfasPythonPath below to that env's
+% python executable (e.g. the output of `conda run -n sfas which python`).
+sfasPythonPath = '/Users/ddeutsch/anaconda3/envs/sfas/bin/python';  % EDIT to match your local sfas conda env
 
 if pyenv().Status == "NotLoaded"
-    pyenv('Version','/Users/ddeutsch/anaconda3/envs/sfas/bin/python');
+    pyenv('Version',sfasPythonPath);
 end
+py.importlib.import_module('sfas');
 
 
 %% main code - modified version that fixes some issues..
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'main code - modified version that fixes some issues..');
 
 % parameters
 nLayers = 4;% number of layers in the plot
@@ -132,7 +136,7 @@ TopEdges_percentile = 10;%show only the TopEdges_percentile % top weights
 UseMultipleSeeds = 0;
 
 %load
-filename = '/Users/ddeutsch/Library/CloudStorage/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/Nature communication/figures/Fig5 - Network/Network_connectivity.mat';
+filename = fullfile(figuresFolder, 'Fig5 - Network', 'Network_connectivity.mat');
 load(filename)
 
 E_sfas = E;
@@ -176,6 +180,10 @@ missingNodes = setdiff(allNodes, order, 'stable');
 order = [order; missingNodes];
 
 [layers, posTbl, G] = plot_sfas_layered(E, E_plot, order, nLayers);
+
+%save figure
+filename = fullfile(figuresFolder, 'Fig5 - Network', 'Network_layout');
+figsave(filename,gcf);
 
 
 %% helper function: run sfas

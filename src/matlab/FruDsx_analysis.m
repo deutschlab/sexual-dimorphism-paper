@@ -1,9 +1,14 @@
 %this script collects and plots general stats about dsxfru for the sexualk dimorphism paper
 
 
-addpath(genpath('/Users/ddeutsch/Dropbox/My Documents/MATLAB/Postdoc work'))
+%% setup: paths are relative to the repository, so this runs on any machine.
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'setup: paths are relative to the repository, so this runs on any machine.');
+% See src/matlab/README.md for how to obtain the external/large files below.
+repoRoot = fileparts(fileparts(fileparts(mfilename('fullpath'))));
+addpath(fullfile(repoRoot,'src','matlab','helpers'))
 
 %%parameters
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'parameters');
 version = 783;%Two neuropil where aadded to the neuropil list:
 subversion = 'V15';
 nRepeats = 100;%sets of flywire cells with super-class distribution at the dsxfru
@@ -14,22 +19,27 @@ nt_Threshold = 0.6;%what is the minimal fraction of cells in a given type that s
 %LA (_L,_R) - Lamina, OCG - ocellar ganglion
 
 %files
-dataFolder = '/Users/ddeutsch/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/data';
+dataFolder = fullfile(repoRoot,'data');
+rawDataFolder = fullfile(dataFolder,'raw');%large/external files, not tracked in git - see src/matlab/README.md
+intermediateFolder = fullfile(dataFolder,'intermediate');%regenerated each run, not tracked in git
 
 %datasets
-filename_flywire = '/Users/ddeutsch/Library/CloudStorage/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/Sources/Supplemental_file1_neuron_annotations.csv';
-filename_dsxfru = fullfile(dataFolder,['Dsxfru_',num2str(version),'_',subversion,'.xlsx']);
-filename_dsxfru_updated =  fullfile(dataFolder,['Dsxfru_',num2str(version),'_',subversion,'_updated.xlsx']);%added fields/columns
+% Supplemental_file1_neuron_annotations: published by Berg et al. (PMID 41279223),
+% https://github.com/flyconnectome/flywire_annotations/tree/main/supplemental_files
+% (pinned to commit f02717b). See src/matlab/README.md for download steps.
+filename_flywire = fullfile(rawDataFolder,'Supplemental_file1_neuron_annotations.tsv');
+filename_dsxfru = fullfile(repoRoot,'Supplemental_table1_neuron_annotations.csv');
+filename_dsxfru_updated =  fullfile(intermediateFolder,['Dsxfru_',num2str(version),'_',subversion,'_updated.csv']);%added fields/columns; regenerated each run
 filename_classRanking = fullfile(dataFolder, ['ranks_',num2str(version)],['allClasses_',num2str(version),'.csv']);
 filename_classRanking_Notnormalized = fullfile(dataFolder,...
     ['ranks_',num2str(version)],['allClasses_',num2str(version),'_notNormalized.csv']);
 filename_auditory = fullfile(dataFolder,['Auditory_cells_',num2str(version),'_new.xlsx']);
 
 
-%CODEX download - info
-filename_connectivity = fullfile(dataFolder,'connections_princeton783.csv');
-filename_cellstats = fullfile(dataFolder,'cell_stats783.csv');
-filename_neurons = fullfile(dataFolder,'neurons783.csv');
+%CODEX download - info (large files, not tracked in git - see src/matlab/README.md for exact version + download steps)
+filename_connectivity = fullfile(rawDataFolder,'connections_princeton783.csv');
+filename_cellstats = fullfile(rawDataFolder,'cell_stats783.csv');
+filename_neurons = fullfile(rawDataFolder,'neurons783.csv');
 %filename_labels =
 %fullfile(dataFolder,['processed_labels',num2str(version),'.csv']); currently not in use
 
@@ -38,15 +48,23 @@ filename_matchednetworks = fullfile(dataFolder,['matched_networks_dsxfru_',num2s
 
 
 %colors (consistent with other FlyWire 'package' papers)
-filename_colors_seatable = '/Users/ddeutsch/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/FlyWire_LR/colors_seatable.csv';
+filename_colors_seatable = fullfile(dataFolder,'colors_seatable.csv');
 
 
-savefolder = '/Users/ddeutsch/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/figures';
+figuresFolder = fullfile(repoRoot,'figures');
+figureSubfolders = {'Fig1 - Methods and Stats','Fig3 - Connectivity','Fig6 - Dsx-centric network',...
+    'Fig7 - Sensory','Fig8 - Sensory','Fig9 - DNs','Fig9 - experimental validation'};
+if ~exist(intermediateFolder,'dir'), mkdir(intermediateFolder); end
+for nFolder = 1:length(figureSubfolders)
+    thisFolder = fullfile(figuresFolder,figureSubfolders{nFolder});
+    if ~exist(thisFolder,'dir'), mkdir(thisFolder); end
+end
 
 %% read files + create tables
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'read files + create tables');
 
 %read flywire table (including updated cell types, neurotransmitter predictions and more)
-opts = detectImportOptions(filename_flywire);
+opts = detectImportOptions(filename_flywire,'FileType','delimitedtext','Delimiter','\t');
 opts = setvartype(opts, 'root_id','string');  %or 'char' if you prefer
 T_flywire = readtable(filename_flywire, opts);
 T_flywire.Properties.VariableNames("root_id") = "cellID";
@@ -54,10 +72,11 @@ T_flywire.Properties.VariableNames("root_id") = "cellID";
 %read dsxfru table
 opts = detectImportOptions(filename_dsxfru);
 opts = setvartype(opts, 'cellID','string');
-T_dsxfru = readtable(filename_dsxfru, opts, 'sheet','V15');
+T_dsxfru = readtable(filename_dsxfru, opts);
 
 %read the auditory table
 T_auditory = readtable(filename_auditory);
+T_auditory.nt_type = T_auditory.top_nt;%this version of the auditory table has top_nt/known_nt instead of nt_type
 
 %read file - classification (not used since Dec 2025 - all the info is in Supplemental_file1_neuron_annotations
 % opts = detectImportOptions(filename_classification);
@@ -211,6 +230,7 @@ if exist(filename_matchednetworks)
 end
 
 %% add fraction of inputs and outputs (by cell_type and by dsxfru_type) in two ways: with and without excluding within subtypes conectivity
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'add fraction of inputs and outputs (by cell_type and by dsxfru_type) in two ways: with and without excluding within subtypes conectivity');
 % if ran twice in a raw - will give an error because of names of columns following outerjoin
 % need to run with the original dsxfru table
 
@@ -517,9 +537,14 @@ writetable(T_dsxfru,filename_dsxfru_updated)%updating fraction in/out from any d
 
 
 %% create a summary table - used by some of the following figures
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'create a summary table - used by some of the following figures');
 
 %note that 'filename_dsxfru_updated' is being used here
-T_dsxfru = readtable(filename_dsxfru_updated);%The 'update' table also has the fraction in/out
+% cellID must be read as string, not numeric - FlyWire root IDs exceed
+% double-precision integer range and would silently lose precision otherwise.
+opts = detectImportOptions(filename_dsxfru_updated);
+opts = setvartype(opts, 'cellID','string');
+T_dsxfru = readtable(filename_dsxfru_updated, opts);%The 'update' table also has the fraction in/out
 
 T_dsxfru_summary = table;
 nLine = 1;
@@ -572,6 +597,7 @@ for nType = 1:length(TYPES)
 end
 
 %% figures 1 - number of left and right cells per type
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'figures 1 - number of left and right cells per type');
 
 %must run the previous cell before - creating the summary table
 
@@ -654,12 +680,13 @@ for nSubplot = 1:2
 
 end
 %save figure 1
-filename = '/Users/ddeutsch/Library/CloudStorage/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/Nature communication/figures/Fig1 - Methods and Stats/Types_LR';
+filename = fullfile(figuresFolder, 'Fig1 - Methods and Stats', 'Types_LR');
 savefig(gcf,filename)
 print(gcf, [filename,'.svg'], '-dsvg');
 
 
 %% figure 2 fraction connect with dsxfru
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'figure 2 fraction connect with dsxfru');
 
 hf = figure(2); clf(hf)
 hf.Color = [1 1 1];%stacked bar plot of sorted fraction in/out within dsx/fru network
@@ -668,7 +695,9 @@ hf.Color = [1 1 1];%stacked bar plot of sorted fraction in/out within dsx/fru ne
 %the fields that are created earlier
 
 %!!!!!!!!!!!!!!! - make sure this is the correct version
-T_dsxfru_withFractions = readtable('/Users/ddeutsch/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/data/Dsxfru_783_V15_updated.xlsx');
+opts = detectImportOptions(filename_dsxfru_updated);
+opts = setvartype(opts, 'cellID','string');
+T_dsxfru_withFractions = readtable(filename_dsxfru_updated, opts);
 %!!!!!!!!!!!!!!!
 
 %list of subtypes
@@ -781,12 +810,13 @@ for nSubplot = 1:nSubplots
     end
 end
 
-filename_savefig_Stacked_InOut = '/Users/ddeutsch/Library/CloudStorage/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/Nature communication/figures/Fig3 - Connectivity/StackedInOut_withinDsxFru';
+filename_savefig_Stacked_InOut = fullfile(figuresFolder, 'Fig3 - Connectivity', 'StackedInOut_withinDsxFru');
 savefig(gcf,filename_savefig_Stacked_InOut)
 print(gcf, [filename_savefig_Stacked_InOut,'.svg'], '-dsvg');
 
 
 %% dsx(-)fru(-) that are most connected to dsxfru.
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'dsx(-)fru(-) that are most connected to dsxfru.');
 % Need to have the tables T_dsxfru and T_flyWire as well as the connections
 tic
 %from dsx(-)fru(-) to dsx/fru+
@@ -872,6 +902,7 @@ Summed_InOut_sorted = SumInOut(I);
 
 toc
 %% plot - connections of dsxfru(-) to dsxfru(+)
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'plot - connections of dsxfru(-) to dsxfru(+)');
 hf = figure(3); clf(hf); hf.Color = [1 1 1];
 FractionIn_sorted = T_fraction_from_dsxfru_.FractionOfSynapses_preDsxFru;
 FractionOut_sorted = T_fraction_to_dsxfru_.FractionOfSynapses_postDsxFru;
@@ -915,13 +946,14 @@ legend('Fraction input from dsx/fru','Fraction output to dsx/fru',...
     'FontSize',12,'location','south','Box','off')
 
 
-filename_savefig_Stacked_InOut = '/Users/ddeutsch/Library/CloudStorage/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/Nature communication/figures/Fig3 - Connectivity/StackedInOut_OutsideDsxFru';
+filename_savefig_Stacked_InOut = fullfile(figuresFolder, 'Fig3 - Connectivity', 'StackedInOut_OutsideDsxFru');
 savefig(gcf,filename_savefig_Stacked_InOut)
 print(gcf, [filename_savefig_Stacked_InOut,'.svg'], '-dsvg');
 
 
 
 %% figure 4 - cells per super class
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'figure 4 - cells per super class');
 %similar to Sven's paper - fig2a
 %create figure
 hf = figure(4); hf.Color = [1 1 1]; hold off
@@ -966,12 +998,13 @@ text(-X_bias,9.7,'Left','HorizontalAlignment','right','FontSize',16)
 axis off
 
 
-filename = '/Users/ddeutsch/Library/CloudStorage/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/Nature communication/figures/Fig1 - Methods and Stats/dsxfru_LR_bySuperclass';
+filename = fullfile(figuresFolder, 'Fig1 - Methods and Stats', 'dsxfru_LR_bySuperclass');
 savefig(gcf,filename)
 print(gcf, [filename,'.svg'], '-dsvg');
 
 
 %% figure 5 - bias to more/less synapses with dsx/fru
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'figure 5 - bias to more/less synapses with dsx/fru');
 
 hf = figure(5); hf.Color = [1 1 1]; hold off
 
@@ -1092,11 +1125,12 @@ text(3.5,170,T.synonym(T.OutBias>2),'Color',[0.85 0.33 0.1],'VerticalAlignment',
 
 
 
-filename = '/Users/ddeutsch/Library/CloudStorage/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/Nature communication/figures/Fig3 - Connectivity/dsxfru_BiasToWithin';
+filename = fullfile(figuresFolder, 'Fig3 - Connectivity', 'dsxfru_BiasToWithin');
 savefig(gcf,filename)
 print(gcf, [filename,'.svg'], '-dsvg');
 
 %% figure(6) - comparing rank between dsxfru and the matched networks
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'figure(6) - comparing rank between dsxfru and the matched networks');
 hf = figure(6); clf(hf); hf.Color = [1 1 1];
 Lia_dsxfru = ismember(T_flywire.cellID,T_dsxfru.cellID);
 jitter_ = 0.1;
@@ -1169,11 +1203,12 @@ xlabel('Olfactory'), ylabel('Gustatory'), box off
 
 
 % save figure
-filename = '/Users/ddeutsch/Library/CloudStorage/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/Nature communication/figures/Fig7 - Sensory/rank_frudsxVSmatched';
+filename = fullfile(figuresFolder, 'Fig7 - Sensory', 'rank_frudsxVSmatched');
 figsave(filename,gcf);
 print(gcf, [filename,'.svg'], '-dsvg');
 
 %% figure(7) - ranks: modality by modality
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'figure(7) - ranks: modality by modality');
 hf = figure(7); clf(hf); hf.Color = [1 1 1];
 N_Subtypes2Show = 40;
 
@@ -1355,12 +1390,13 @@ SummaryTable = removevars(SummaryTable,{'uniqueCombinations_SummaryTable_olfacto
 SummaryTable = movevars(SummaryTable,'SUBGROUPS','Before','mechanosensory_jo_mean');
 
 % save figure
-filename = '/Users/ddeutsch/Library/CloudStorage/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/Nature communication/figures/Fig7 - Sensory/rank_byModality';
+filename = fullfile(figuresFolder, 'Fig7 - Sensory', 'rank_byModality');
 figsave(filename,gcf);
 savefig(gcf, filename)
 print(gcf, [filename,'.svg'], '-dsvg');
 
 %% figures(8) - ranks: pairs of modalities
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'figures(8) - ranks: pairs of modalities');
 
 %run after the revious cell (that creates 'SummaryTable')!!!
 
@@ -1496,12 +1532,13 @@ end
 legend(LEGEND,'Box','off')
 
 % save figure
-filename = '/Users/ddeutsch/Library/CloudStorage/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/Nature communication/figures/Fig8 - Sensory/rank_ModalityPairs';
+filename = fullfile(figuresFolder, 'Fig8 - Sensory', 'rank_ModalityPairs');
 figsave(filename, gcf);
 print(gcf, [filename,'.svg'], '-dsvg');
 savefig(gcf, filename);
 
 %% strongest connections - focus on specific circuits
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'strongest connections - focus on specific circuits');
 
 %This loop creates subgroups (so if one dsxfru type has N>1 primary types, each primary type is considered separately)
 TYPES = unique(T_dsxfru.synonym,'stable');
@@ -1610,10 +1647,11 @@ T_dsxfru2dsxfru_grouped = movevars(T_dsxfru2dsxfru_grouped,'postType_nt','After'
 T_withinDsxFru_filtered = T_dsxfru2dsxfru_grouped(T_dsxfru2dsxfru_grouped.Fraction_oneTypePre>Conn_Threshold & T_dsxfru2dsxfru_grouped.Fraction_oneTypePost>Conn_Threshold,:);
 
 
-filename = '/Users/ddeutsch/Library/CloudStorage/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/Nature communication/figures/Fig6 - Dsx-centric network/Tables_Connectivity_BetweenWithin_dsxFru_All.mat';
+filename = fullfile(figuresFolder, 'Fig6 - Dsx-centric network', 'Tables_Connectivity_BetweenWithin_dsxFru_All.mat');
 save(filename,'T_dsxfru2dsxfru','T_dsxfru2dsxfru_grouped','T_withinDsxFru_filtered','T_All2dsxfru','T_All2dsxfru_grouped','T_dsxfru2All','T_dsxfru2All_grouped')
 
 %% Direct connections: dsxfru to descending
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'Direct connections: dsxfru to descending');
 
 % !!! run this cell after running the first two cells of the script (reading the data) and the previous cell !!!
 
@@ -1741,9 +1779,10 @@ T_dsxfru2AnyDescending_groupedByprepost_filtered =...
 
 
 
-filename = '/Users/ddeutsch/Library/CloudStorage/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/Nature communication/figures/Fig9 - DNs/Tables_FruDsx2Descending.mat';
+filename = fullfile(figuresFolder, 'Fig9 - DNs', 'Tables_FruDsx2Descending.mat');
 save(filename,'T_dsxfru2descending_groupedByprepost')
 %% figure(9) - directed graph: dsxfru to descending
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'figure(9) - directed graph: dsxfru to descending');
 hf = figure(9); clf(hf); hf.Color = [1 1 1];
 subplot(311)%to make it flat..
 
@@ -1816,7 +1855,7 @@ ha = gca;
 ha.XAxis.Color = [1 1 1]; ha.YAxis.Color = [1 1 1];
 
 
-filename = '/Users/ddeutsch/Library/CloudStorage/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/Nature communication/figures/Fig9 - DNs/dsxfru2Descending';
+filename = fullfile(figuresFolder, 'Fig9 - DNs', 'dsxfru2Descending');
 savefig(gcf,filename)
 print(gcf, [filename,'.svg'], '-dsvg');
 %print(gcf, [filename,'.png'], '-dpng', '-opengl');
@@ -1824,6 +1863,7 @@ print(gcf, [filename,'.svg'], '-dsvg');
 
 
 %% connections: auditory and dsxfru
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'connections: auditory and dsxfru');
 
 Conn_Threshold = 0.01;
 
@@ -2136,7 +2176,7 @@ T_dsxfru_auditory_united_filtered = T_dsxfru_auditory_united(T_dsxfru_auditory_u
     T_dsxfru_auditory_united.groupSum./T_dsxfru_auditory_united.PreToAll>Conn_Threshold,:);
 
 
-filename = '/Users/ddeutsch/Library/CloudStorage/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/Nature communication/figures/Fig7 - Sensory/Tables_dsxfru_auditory.mat';
+filename = fullfile(figuresFolder, 'Fig7 - Sensory', 'Tables_dsxfru_auditory.mat');
 save(filename,'T_dsxfru_auditory_united','T_dsxfru_auditory_united_filtered')
 
 
@@ -2153,6 +2193,7 @@ save(filename,'T_dsxfru_auditory_united','T_dsxfru_auditory_united_filtered')
 
 
 %% dsx-centric: Three layers: layer 1 = direct connectivity to pMN1,2 (this one threshold), then layer 2:
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'dsx-centric: Three layers: layer 1 = direct connectivity to pMN1,2 (this one threshold), then layer 2:');
 % direct connection with layer 1 with a second threshold.
 % eventually T_layer1, T_layer2 are used to create the figure.
 
@@ -2180,6 +2221,7 @@ T = T_dsxfru2dsxfru_grouped(ismember(T_dsxfru2dsxfru_grouped.preType,TYPES_layer
 T_layer2 = T(T.Fraction_oneTypePre>=Threshold_layer2 & T.Fraction_oneTypePost>=Threshold_layer2,:);
 
 %% add layer 3: non-dsxfru to/from layer 1
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'add layer 3: non-dsxfru to/from layer 1');
 
 
 %----------------------------------------
@@ -2303,6 +2345,7 @@ T_layer3 = T_layer3(~ismember( ...
     [string(T_layer2.preType), string(T_layer2.postType)], ...
     'rows'), :);
 %%
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), '');
 
 
 
@@ -2331,10 +2374,11 @@ T_grouped.sum_syn_count = T_dsxfru2All_grouped.sum_syn_count(Locb,:);
 T_DsxFru2vpoEN = T_grouped(T_grouped.GroupCount./T_grouped.sum_syn_count>=Threshold_layer2,:);
 
 
-filename = '/Users/ddeutsch/Library/CloudStorage/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/Nature communication/figures/Fig6 - Dsx-centric network/Dsx-centric.mat';
+filename = fullfile(figuresFolder, 'Fig6 - Dsx-centric network', 'Dsx-centric.mat');
 save(filename,'T_layer1','TYPES_layer1','T_layer2','TYPES_layer2','T_vpoEN2DsxFru','T_DsxFru2vpoEN')
 
 %% statistics: comparing dsxfru to matched networks/flywire: superclass, neurotransmitter, partners, synapses, length,area,size
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'statistics: comparing dsxfru to matched networks/flywire: superclass, neurotransmitter, partners, synapses, length,area,size');
 
 % figure 10 - superclass of dsxfru vs the rest of the brain (excluding kanyon cells)
 hf = figure(10); clf(hf); hf.Color = [1 1 1];
@@ -2599,11 +2643,12 @@ ha.XTickLabel = 'Size';
 box off
 %hl = legend('Matched Networks','Fru/Dsx','FlyWire'); hl.Box = 'off'; hl.Location = 'southwest';%save figure
 
-filename = '/Users/ddeutsch/Library/CloudStorage/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/Nature communication/figures/Fig1 - Methods and Stats/Fig_1S3_stats';
+filename = fullfile(figuresFolder, 'Fig1 - Methods and Stats', 'Fig_1S3_stats');
 figsave(filename, gcf);
 
 
 %% connectivity between vpoEN and LC31b and pC2l, DNp13 and pIP5.... (not part of the fru/dsx paper - just helps exploring)
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'connectivity between vpoEN and LC31b and pC2l, DNp13 and pIP5.... (not part of the fru/dsx paper - just helps exploring)');
 % Need to run the first two cells first, to get the relevant tables.
 
 tic
@@ -2630,7 +2675,7 @@ for ii = 1:length(NAMES)
     end
 end
 
-filename_saveVars = '/Users/ddeutsch/Library/CloudStorage/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/Nature communication/figures/Fig9 - experimental validation/LocalConnectivity.mat';
+filename_saveVars = fullfile(figuresFolder, 'Fig9 - experimental validation', 'LocalConnectivity.mat');
 save(filename_saveVars,'NAMES','SYNAPSES')
 
 toc
@@ -2648,10 +2693,11 @@ T_syn = array2table(SYNAPSES, 'VariableNames', varNames);
 % Add first column with cell type names
 T = addvars(T_syn, cellType, 'Before', 1, 'NewVariableNames', 'cell_Type');
 
-filename_saveTable = '/Users/ddeutsch/Library/CloudStorage/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/Nature communication/figures/Fig9 - experimental validation/LocalConnectivity.xlsx';
+filename_saveTable = fullfile(figuresFolder, 'Fig9 - experimental validation', 'LocalConnectivity.xlsx');
 writetable(T, filename_saveTable)
 
 %% get the list of cells for ranks 1-3 from: Mech. JO; Olfactory; Gustatory; Visual Proj.
+fprintf(1, '[%s] >>> %s\n', datestr(now,'HH:MM:SS'), 'get the list of cells for ranks 1-3 from: Mech. JO; Olfactory; Gustatory; Visual Proj.');
 
 %!!!!!!!!!!!!!!! - make sure this is the correct version
 %T_dsxfru_withFractions = readtable('/Users/ddeutsch/Dropbox/My Documents/MyOwnLab/Experiments/Connectomics/dsx_fru/Shared_dsxfru/data/Dsxfru_783_V15_updated.xlsx');
@@ -2689,7 +2735,5 @@ for i = 1:numel(modalities)
         sortedCounts = counts(order);
         disp(sortedUnique)
         disp(sortedCounts')
-
-        pause
     end
 end
